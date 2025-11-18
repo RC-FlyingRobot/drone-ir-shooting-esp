@@ -9,12 +9,12 @@ const char *ssid = "LAPTOP-7BRN7V2J 0408";
 const char *password = "3401q+9H";
 
 // --- 赤外線センサー設定 ---
-const uint16_t kRecvPin = D2;  // センサーのピン
-const uint16_t kLedPin_1 = D1; // LEDのピン
-const uint16_t kLedPin_2 = D3; // LEDのピン
-// const uint64_t HIT_CODE = 0x5555555555555555; // エアコンのリモコン
-const uint32_t HIT_CODE = 0x8F7807F; // 赤外線(38kHz)
-IRrecv irrecv(kRecvPin);
+const uint16_t RECV_PIN = D2;                      // センサーのピン
+const uint16_t LED_1_PIN = D3;                     // LEDのピン
+const uint16_t LED_2_PIN = D4;                     // LEDのピン
+const uint64_t HIT_CODE_TEST = 0x5555555555555555; // エアコンのリモコン
+const uint32_t HIT_CODE = 0x8F7807F;               // 赤外線(38kHz)
+IRrecv irrecv(RECV_PIN);
 decode_results results;
 
 // --- WebSocketサーバー設定 ---
@@ -38,10 +38,10 @@ void setup()
   Serial.begin(115200);
 
   // LEDピンを出力モードに設定
-  pinMode(kLedPin_1, OUTPUT);
-  digitalWrite(kLedPin_1, LOW); // 初期状態は消灯
-  pinMode(kLedPin_2, OUTPUT);
-  digitalWrite(kLedPin_2, LOW); // 初期状態は消灯
+  pinMode(LED_1_PIN, OUTPUT);
+  pinMode(LED_2_PIN, OUTPUT);
+  digitalWrite(LED_1_PIN, LOW); // 初期状態は消灯
+  digitalWrite(LED_2_PIN, LOW); // 初期状態は消灯
 
   // Wi-Fi接続
   WiFi.begin(ssid, password);
@@ -76,15 +76,16 @@ void loop()
     Serial.print(", Bits: ");
     Serial.print(results.bits); // 受信したビット数を表示
     Serial.print(", Type: ");
-    // プロトコル名を文字列で表示（ライブラリ関数が見つからないため数値で表示）
+
+    // プロトコル名を文字列で表示
     Serial.print((int)results.decode_type);
     Serial.println();
 
     // LEDを点灯
-    digitalWrite(kLedPin_1, HIGH);
-    digitalWrite(kLedPin_2, HIGH);
+    // digitalWrite(LED_1_PIN, HIGH); // デバッグ用
+    // digitalWrite(LED_2_PIN, HIGH); // デバッグ用
 
-    // もし、当たり判定のコードと一致したら
+    // もし当たり判定のコードと一致したら
     if (results.value == HIT_CODE)
     {
       Serial.println("HIT DETECTED!");
@@ -92,13 +93,14 @@ void loop()
       ws.textAll("HIT");
 
       // LEDを点灯
-      // digitalWrite(kLedPin, HIGH);
+      digitalWrite(LED_1_PIN, HIGH);
+      digitalWrite(LED_2_PIN, HIGH);
     }
 
-    // 0.1秒待ってからLEDを消灯（視認しやすくするため）
+    // 0.1 秒待ってからLEDを消灯
     delay(100);
-    digitalWrite(kLedPin_1, LOW);
-    digitalWrite(kLedPin_2, LOW);
+    digitalWrite(LED_1_PIN, LOW);
+    digitalWrite(LED_2_PIN, LOW);
 
     // 次の信号を受信するためにリセット
     irrecv.resume();
