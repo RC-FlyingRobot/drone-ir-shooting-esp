@@ -9,9 +9,9 @@ const char *ssid = "LAPTOP-7BRN7V2J 0408";
 const char *password = "3401q+9H";
 
 // --- 赤外線センサー設定 ---
-const uint16_t RECV_PIN = D2;                      // センサーのピン
-const uint16_t LED_1_PIN = D3;                     // LEDのピン
-const uint16_t LED_2_PIN = D4;                     // LEDのピン
+const uint16_t RECV_PIN = D1;                      // センサーのピン
+const uint16_t LED_1_PIN = D2;                     // LEDのピン
+const uint16_t LED_2_PIN = D3;                     // LEDのピン
 const uint64_t HIT_CODE_TEST = 0x5555555555555555; // エアコンのリモコン
 const uint32_t HIT_CODE = 0x8F7807F;               // 赤外線(38kHz)
 IRrecv irrecv(RECV_PIN);
@@ -20,6 +20,10 @@ decode_results results;
 // --- WebSocketサーバー設定 ---
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws"); // /ws パス
+
+// --- クールダウン設定 ---
+unsigned long lastHitTime = 0;
+const unsigned long HIT_COOLDOWN = 200; // 0.2秒間のクールダウン
 
 void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
@@ -67,6 +71,8 @@ void setup()
 
 void loop()
 {
+  ws.cleanupClients();
+
   // 赤外線信号を受信したら
   if (irrecv.decode(&results))
   {
@@ -86,15 +92,33 @@ void loop()
     // digitalWrite(LED_2_PIN, HIGH); // デバッグ用
 
     // もし当たり判定のコードと一致したら
-    if (results.value == HIT_CODE)
+    if (results.value == HIT_CODE_TEST)
     {
-      Serial.println("HIT DETECTED!");
-      // 接続している全てのクライアントに "HIT" という文字列を送信
-      ws.textAll("HIT");
+      if (millis() - lastHitTime > HIT_COOLDOWN)
+      {
+        Serial.println("HIT DETECTED (REMOTE)!");
+        // 接続している全てのクライアントに "HIT_REMOTE" という文字列を送信
+        ws.textAll("HIT_REMOTE");
+        lastHitTime = millis();
 
-      // LEDを点灯
-      digitalWrite(LED_1_PIN, HIGH);
-      digitalWrite(LED_2_PIN, HIGH);
+        // LEDを点灯
+        digitalWrite(LED_1_PIN, HIGH);
+        digitalWrite(LED_2_PIN, HIGH);
+      }
+    }
+    else if (results.value == HIT_CODE)
+    {
+      if (millis() - lastHitTime > HIT_COOLDOWN)
+      {
+        Serial.println("HIT DETECTED (IR)!");
+        // 接続している全てのクライアントに "HIT_IR" という文字列を送信
+        ws.textAll("HIT_IR");
+        lastHitTime = millis();
+
+        // LEDを点灯
+        digitalWrite(LED_1_PIN, HIGH);
+        digitalWrite(LED_2_PIN, HIGH);
+      }
     }
 
     // 0.1 秒待ってからLEDを消灯
