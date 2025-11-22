@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <ESPAsyncWebServer.h>
 #include <IRremoteESP8266.h>
 #include <IRutils.h>
@@ -23,7 +24,7 @@ AsyncWebSocket ws("/ws"); // /ws パス
 
 // --- クールダウン設定 ---
 unsigned long lastHitTime = 0;
-const unsigned long HIT_COOLDOWN = 200; // 0.2秒間のクールダウン
+const unsigned long HIT_COOLDOWN = 500; // 0.5秒間のクールダウン
 
 void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
@@ -57,6 +58,12 @@ void setup()
   Serial.println("\nWiFi connected!");
   Serial.print("IP: ");
   Serial.println(WiFi.localIP());
+
+  // mDNS設定
+  if (MDNS.begin("esp32-drone"))
+  {
+    Serial.println("mDNS responder started: esp32-drone.local");
+  }
 
   // 赤外線受信を開始
   irrecv.enableIRIn();
