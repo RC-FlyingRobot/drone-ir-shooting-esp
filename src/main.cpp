@@ -1,139 +1,126 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include <ESPmDNS.h>
-#include <ESPAsyncWebServer.h>
 #include <IRremoteESP8266.h>
 #include <IRutils.h>
 #include <IRrecv.h>
+#include <Preferences.h>
 
 const char *ssid = "LAPTOP-7BRN7V2J 0408";
 const char *password = "3401q+9H";
 
-// --- 赤外線センサー設定 ---
+// --- ピン周りの設定 --- //
 const uint16_t RECV_PIN = D1;                      // センサーのピン
-const uint16_t LED_1_PIN = D2;                     // LEDのピン
-const uint16_t LED_2_PIN = D3;                     // LEDのピン
-const uint64_t HIT_CODE_TEST = 0x5555555555555555; // エアコンのリモコン
-const uint32_t HIT_CODE = 0x8F7807F;               // 赤外線(38kHz)
-IRrecv irrecv(RECV_PIN);
-decode_results results;
+const uint16_t LED_1_PIN = D2;                     // 緑色LEDのピン1
+const uint16_t LED_2_PIN = D3;                     // 緑色LEDのピン2
+const uint64_t HIT_CODE_TEST = 0x5555555555555555; // エアコンのリモコンのヒットコード
+const uint32_t HIT_CODE = 0x8F7807F;               // 赤外線(38kHz)のヒットコード
 
-// --- WebSocketサーバー設定 ---
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws"); // /ws パス
+IRrecv irrecv(RECV_PIN); // 赤外線受信オブジェクト
+decode_results results;  // 受信結果オブジェクト
 
-// --- クールダウン設定 ---
-unsigned long lastHitTime = 0;
-const unsigned long HIT_COOLDOWN = 500; // 0.5秒間のクールダウン
+// --- データ保存関係 --- //
+Preferences preferences;
+int currentScore = 0;       // 現在のスコア
+bool isGameRunning = false; // ゲーム中かどうかのフラグ
 
-void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
-{
-  if (type == WS_EVT_CONNECT)
-  {
-    Serial.println("Client connected");
-  }
-  else if (type == WS_EVT_DISCONNECT)
-  {
-    Serial.println("Client disconnected");
-  }
-}
+// --- クールダウンタイム設定 --- //
+unsigned long lastHitTime = 0;          // 最後にヒットを検出した時間
+const unsigned long HIT_COOLDOWN = 200; // クールダウン時間(ミリ秒)
 
 void setup()
 {
-  Serial.begin(115200);
+  Serial.begin(115200); // USBシリアル開始
 
-  // LEDピンを出力モードに設定
+  // LEDピン初期化
   pinMode(LED_1_PIN, OUTPUT);
+  digitalWrite(LED_1_PIN, LOW);
   pinMode(LED_2_PIN, OUTPUT);
-  digitalWrite(LED_1_PIN, LOW); // 初期状態は消灯
-  digitalWrite(LED_2_PIN, LOW); // 初期状態は消灯
+  digitalWrite(LED_2_PIN, LOW);
 
-  // Wi-Fi接続
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected!");
-  Serial.print("IP: ");
-  Serial.println(WiFi.localIP());
-
-  // mDNS設定
-  if (MDNS.begin("esp32-drone"))
-  {
-    Serial.println("mDNS responder started: esp32-drone.local");
-  }
-
-  // 赤外線受信を開始
+  // 赤外線開始
   irrecv.enableIRIn();
-  Serial.println("IR Receiver Ready!");
 
-  // WebSocketサーバーを開始
-  ws.onEvent(onWebSocketEvent);
-  server.addHandler(&ws);
-  server.begin();
-  Serial.println("WebSocket server started!");
+  // 保存領域を開く(名前空間: "game", 読み書きモード: false)
+  preferences.begin("game", false);
+
+  // 電源喪失対策として, 前回の続きからスコアを読み込む
+  // デフォルトは0
+  currentScore = preferences.getInt("score", 0);
+
+  Serial.println("System Ready. Current Saved Score: " + String(currentScore));
 }
 
 void loop()
 {
-  ws.cleanupClients();
+  // USBシリアルからのコマンド受信
+  if (Serial.available() > 0)
+  {
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // 改行コード除去
 
-  // 赤外線信号を受信したら
+    // ゲーム開始時
+    if (command == "START")
+    {
+      // スコアをリセットして保存
+      currentScore = 0;
+      preferences.putInt("score", currentScore); // 保存
+      isGameRunning = true;
+      Serial.println("OK:STARTED");
+
+      // 合図用のLED点滅(3回)
+      for (int i = 0; i < 3; i++)
+      {
+        digitalWrite(LED_1_PIN, HIGH);
+        digitalWrite(LED_2_PIN, HIGH);
+        delay(100);
+        digitalWrite(LED_1_PIN, LOW);
+        digitalWrite(LED_2_PIN, LOW);
+        delay(100);
+      }
+    }
+
+    // ゲーム終了時
+    else if (command == "FINISH")
+    {
+      // 現在のスコアを返す
+      isGameRunning = false;
+      Serial.println("SCORE:" + String(currentScore));
+    }
+  }
+
+  // 赤外線受信時
   if (irrecv.decode(&results))
   {
-    Serial.print("Received Code: 0x");
-    Serial.print(results.value, HEX); // 16進数で値を表示
+    // ゲーム中でなくても, ヒットしたらカウントして保存する仕様にする
+    // USBを抜いている間は isGameRunning フラグがリセットされる可能性があるため
 
-    Serial.print(", Bits: ");
-    Serial.print(results.bits); // 受信したビット数を表示
-    Serial.print(", Type: ");
-
-    // プロトコル名を文字列で表示
-    Serial.print((int)results.decode_type);
-    Serial.println();
-
-    // LEDを点灯
-    // digitalWrite(LED_1_PIN, HIGH); // デバッグ用
-    // digitalWrite(LED_2_PIN, HIGH); // デバッグ用
-
-    // もし当たり判定のコードと一致したら
+    bool isHit = false;
+    if (results.value == HIT_CODE)
+      isHit = true;
     if (results.value == HIT_CODE_TEST)
-    {
-      if (millis() - lastHitTime > HIT_COOLDOWN)
-      {
-        Serial.println("HIT DETECTED (REMOTE)!");
-        // 接続している全てのクライアントに "HIT_REMOTE" という文字列を送信
-        ws.textAll("HIT_REMOTE");
-        lastHitTime = millis();
+      isHit = true;
 
-        // LEDを点灯
-        digitalWrite(LED_1_PIN, HIGH);
-        digitalWrite(LED_2_PIN, HIGH);
-      }
-    }
-    else if (results.value == HIT_CODE)
+    if (isHit && (millis() - lastHitTime > HIT_COOLDOWN))
     {
-      if (millis() - lastHitTime > HIT_COOLDOWN)
-      {
-        Serial.println("HIT DETECTED (IR)!");
-        // 接続している全てのクライアントに "HIT_IR" という文字列を送信
-        ws.textAll("HIT_IR");
-        lastHitTime = millis();
+      // スコア加算
+      currentScore++;
 
-        // LEDを点灯
-        digitalWrite(LED_1_PIN, HIGH);
-        digitalWrite(LED_2_PIN, HIGH);
-      }
+      // 即座にフラッシュメモリに保存
+      // これにより, この瞬間に電源が落ちてもデータは守られる
+      preferences.putInt("score", currentScore);
+
+      lastHitTime = millis();
+
+      // LED点灯
+      digitalWrite(LED_1_PIN, HIGH);
+      digitalWrite(LED_2_PIN, HIGH);
+      delay(100);
+      digitalWrite(LED_1_PIN, LOW);
+      digitalWrite(LED_2_PIN, LOW);
+
+      // デバッグ出力(USBがつながっている時だけ見える)
+      Serial.println("HIT! Saved Score: " + String(currentScore));
     }
 
-    // 0.1 秒待ってからLEDを消灯
-    delay(100);
-    digitalWrite(LED_1_PIN, LOW);
-    digitalWrite(LED_2_PIN, LOW);
-
-    // 次の信号を受信するためにリセット
     irrecv.resume();
   }
 }
