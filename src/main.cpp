@@ -8,11 +8,19 @@ const char *ssid = "LAPTOP-7BRN7V2J 0408";
 const char *password = "3401q+9H";
 
 // --- ピン周りの設定 --- //
-const uint16_t RECV_PIN = D1;                      // センサーのピン
-const uint16_t LED_1_PIN = D2;                     // 緑色LEDのピン1
-const uint16_t LED_2_PIN = D3;                     // 緑色LEDのピン2
-const uint64_t HIT_CODE_TEST = 0x5555555555555555; // エアコンのリモコンのヒットコード
-const uint32_t HIT_CODE = 0x8F7807F;               // 赤外線(38kHz)のヒットコード
+const uint16_t RECV_PIN = D1;  // センサーのピン
+const uint16_t LED_1_PIN = D2; // 緑色LEDのピン1
+const uint16_t LED_2_PIN = D3; // 緑色LEDのピン2
+
+// ヒット判定を行うコードのリスト (64bit対応)
+const uint64_t HIT_CODES[] = {
+    0x5555555555555555, // エアコンのリモコン
+    0x8F7807F,          // 赤外線(38kHz) 正規コード
+    0xB301BD1F,         // 頻出パターン1
+    0x55EEECD,          // 頻出パターン2
+    0xCADB61A9          // 頻出パターン3
+};
+const int HIT_CODES_COUNT = sizeof(HIT_CODES) / sizeof(HIT_CODES[0]);
 
 IRrecv irrecv(RECV_PIN); // 赤外線受信オブジェクト
 decode_results results;  // 受信結果オブジェクト
@@ -90,14 +98,21 @@ void loop()
   // 赤外線受信時
   if (irrecv.decode(&results))
   {
+    // デバッグ用出力(USBがつながっている時だけ見える)
+    Serial.println(resultToHexidecimal(&results));
+
     // ゲーム中でなくても, ヒットしたらカウントして保存する仕様にする
     // USBを抜いている間は isGameRunning フラグがリセットされる可能性があるため
 
     bool isHit = false;
-    if (results.value == HIT_CODE)
-      isHit = true;
-    if (results.value == HIT_CODE_TEST)
-      isHit = true;
+    for (int i = 0; i < HIT_CODES_COUNT; i++)
+    {
+      if (results.value == HIT_CODES[i])
+      {
+        isHit = true;
+        break;
+      }
+    }
 
     if (isHit && (millis() - lastHitTime > HIT_COOLDOWN))
     {
